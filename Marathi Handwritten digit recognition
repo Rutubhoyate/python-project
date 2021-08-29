@@ -1,0 +1,93 @@
+
+import os
+import time
+import pickle
+import multiprocessing
+
+from PIL import Image
+
+import numpy as np
+import matplotlib.pyplot as pplt
+import matplotlib.cm as cmap
+import pandas as pd
+
+from sklearn import datasets
+from sklearn import preprocessing
+from sklearn import model_selection
+from sklearn import metrics
+from sklearn import neural_network as nn
+
+from sklearn import svm
+from sklearn.multiclass import OneVsRestClassifier as OVRC
+from sklearn.ensemble import BaggingClassifier as BC
+
+% matplotlib inline
+RELPATH_DATA             = 'data'
+RELPATH_TRAIN            = os.path.join(RELPATH_DATA, 'train.csv')
+RELPATH_TEST             = os.path.join(RELPATH_DATA, 'test.csv')
+
+DEVANAGARI_DIGIT_CHARSET = ['०','१','२','३','४','५','६','७','८','९']
+In [ ]:
+NUM_CORES                = multiprocessing.cpu_count() - 2
+NUM_CORES
+In [ ]:
+data   = pd.concat([pd.read_csv(RELPATH_TRAIN), pd.read_csv(RELPATH_TEST)])
+sample = data.sample()
+
+sample.sample()
+
+arr = np.array(sample.ix[:,:-1])
+arr = np.reshape(arr, (32, 32))
+In [ ]:
+pplt.imshow(arr, cmap = cmap.gray)
+
+digits   = data[data['character'].isin(DEVANAGARI_DIGIT_CHARSET)]
+X, y     = digits.ix[:,:-1], digits.ix[:,-1]
+# X, y     = data.ix[:,:-1], data.ix[:,-1]
+encoder  = preprocessing.LabelEncoder()
+y        = encoder.fit_transform(y)
+
+with open('DHCD-LE.pkl', 'wb') as f:
+    pickle.dump(encoder, f)
+
+Xtrain, Xtest, ytrain, ytest = model_selection.train_test_split(X, y, train_size = 0.60)
+
+def stratified_cross_validate(X, y, class_, n_folds = 10, *args, **kwargs):
+    model      = class_(*args, **kwargs)
+    crossval   = model_selection.StratifiedKFold(n_splits = n_folds)
+    accuracy   = 0
+    
+    accuracies = [ ]    
+    for ii, jj in crossval.split(X, y):
+        Xtrain, Xtest = X[ii], X[jj]
+        ytrain, ytest = y[ii], y[jj]
+        
+        model         = model.fit(Xtrain, ytrain)
+        predict       = model.predict(Xtest)
+        acc           = metrics.accuracy_score(ytest, predict)
+        accuracy     += acc
+        
+        accuracies.append(acc)
+    
+    figure = pplt.figure(figsize = (20, 15))
+    axes   = figure.add_subplot(111)
+    axes.plot(list(range(1, n_folds + 1)), accuracies)
+    
+    return figure, axes, (accuracy / n_folds), model
+#     return (accuracy / n_folds), model
+
+pplt.style.use('fivethirtyeight')
+
+start               = time.time()
+fig, ax, acc, model = stratified_cross_validate(np.asarray(Xtrain), np.asarray(ytrain), svm.SVC, verbose = 3)
+end                 = time.time()
+# acc, model = stratified_cross_validate(np.asarray(Xtrain), np.asarray(ytrain), svm.SVC, verbose = 3)
+
+print('time ellapsed: %.2fs' % (end - start))
+acc
+predict = model.predict(Xtest)
+overacc = metrics.accuracy_score(ytest, predict)
+overacc
+
+with open('SVC-{crossacc},10-{accuracy},0.60.pkl'.format(crossacc = acc, accuracy = overacc), 'wb') as f:
+    pickle.dump(model, f)
